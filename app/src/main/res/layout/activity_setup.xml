@@ -26,13 +26,6 @@
                 android:textStyle="bold" />
 
             <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/maker_line"
-                android:textColor="#CFE3F0"
-                android:textSize="14sp" />
-
-            <TextView
                 android:id="@+id/tvServiceState"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -157,14 +150,6 @@
                 android:text="No storage permission is needed. You choose the CSV file yourself with the Select CSV file button."
                 android:textColor="@color/text_dark"
                 android:textSize="15sp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/maker_line"
-                android:textColor="@color/text_soft"
-                android:textSize="13sp" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>
