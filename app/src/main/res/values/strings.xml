@@ -1,0 +1,4 @@
+<resources>
+    <string name="service_description">AutoFiller fills forms automatically from a CSV file. Turn this on only while you use AutoFiller.</string>
+    <string name="maker_line">Made by Muhammad Ali Ejaz</string>
+</resources>
