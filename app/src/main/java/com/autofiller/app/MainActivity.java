@@ -11,8 +11,10 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
+import android.view.View;
 import android.widget.Button;
-import android.widget.CheckBox;
+import android.widget.ProgressBar;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -24,12 +26,18 @@ import java.util.List;
 // The main screen: pick the CSV, pick the Govt app, and control the run.
 public class MainActivity extends Activity {
 
+    // The Govt app is found automatically if it is installed.
+    private static final String GOVT_PACKAGE = "com.ictapp.kp.foodapp";
+
     private static final int REQ_CSV = 1;
     private static final int REQ_SAVE_FAILED = 2;
     private static final int REQ_SAVE_LOG = 3;
+    private static final int REQ_SAVE_REPORT = 4;
 
     private RowStore store;
-    private TextView tvCsv, tvGovt, tvStatus, tvCurrent, tvSuccess, tvFailed, tvMessage;
+    private TextView tvCsv, tvGovt, tvStatus, tvCurrent, tvSuccess, tvFailed, tvMessage, tvModeNote;
+    private Button btnStart, btnPause, btnResume, btnStop;
+    private ProgressBar progressBar;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     // Every 0.7 seconds, copy the progress from the notebook onto the screen.
@@ -54,36 +62,46 @@ public class MainActivity extends Activity {
         tvSuccess = findViewById(R.id.tvSuccess);
         tvFailed = findViewById(R.id.tvFailed);
         tvMessage = findViewById(R.id.tvMessage);
+        tvModeNote = findViewById(R.id.tvModeNote);
+        progressBar = findViewById(R.id.progressBar);
+        btnStart = findViewById(R.id.btnStart);
+        btnPause = findViewById(R.id.btnPause);
+        btnResume = findViewById(R.id.btnResume);
+        btnStop = findViewById(R.id.btnStop);
 
-        CheckBox cbDry = findViewById(R.id.cbDry);
+        Switch cbDry = findViewById(R.id.cbDry);
         cbDry.setChecked(store.isDryRun());
-        cbDry.setOnCheckedChangeListener((button, checked) -> store.setDryRun(checked));
+        cbDry.setOnCheckedChangeListener((button, checked) -> {
+            store.setDryRun(checked);
+            showModeNote();
+        });
+        showModeNote();
 
-        ((Button) findViewById(R.id.btnSetup)).setOnClickListener(v ->
+        findViewById(R.id.btnSetup).setOnClickListener(v ->
                 startActivity(new Intent(this, SetupActivity.class)));
-        ((Button) findViewById(R.id.btnCsv)).setOnClickListener(v -> pickCsv());
-        ((Button) findViewById(R.id.btnGovt)).setOnClickListener(v -> pickGovtApp());
-        ((Button) findViewById(R.id.btnStart)).setOnClickListener(v -> startRun(false));
-        ((Button) findViewById(R.id.btnResume)).setOnClickListener(v -> startRun(true));
-        ((Button) findViewById(R.id.btnPause)).setOnClickListener(v -> {
+        findViewById(R.id.btnCsv).setOnClickListener(v -> pickCsv());
+        findViewById(R.id.btnGovt).setOnClickListener(v -> pickGovtApp());
+        btnStart.setOnClickListener(v -> startRun(false));
+        btnResume.setOnClickListener(v -> startRun(true));
+        btnPause.setOnClickListener(v -> {
             if (FillerService.instance != null) FillerService.instance.pause();
         });
-        ((Button) findViewById(R.id.btnStop)).setOnClickListener(v -> {
+        btnStop.setOnClickListener(v -> {
             if (FillerService.instance != null) FillerService.instance.stop();
         });
-        ((Button) findViewById(R.id.btnSaveFailed)).setOnClickListener(v ->
-                saveFile(REQ_SAVE_FAILED, "failed.csv", "text/csv"));
-        ((Button) findViewById(R.id.btnSaveLog)).setOnClickListener(v ->
-                saveFile(REQ_SAVE_LOG, "autofiller_log.txt", "text/plain"));
-        ((Button) findViewById(R.id.btnDump)).setOnClickListener(v -> {
+        findViewById(R.id.btnSaveReport).setOnClickListener(v -> saveFile(REQ_SAVE_REPORT));
+        findViewById(R.id.btnSaveFailed).setOnClickListener(v -> saveFile(REQ_SAVE_FAILED));
+        findViewById(R.id.btnSaveLog).setOnClickListener(v -> saveFile(REQ_SAVE_LOG));
+        findViewById(R.id.btnDump).setOnClickListener(v -> {
             if (FillerService.instance == null) {
                 toast("Turn ON AutoFiller in Accessibility settings first");
                 return;
             }
-                        toast("Open the Govt app now. The screen is read in 15 seconds.");
+            toast("Open the Govt app now. The screen is read in 15 seconds.");
             FillerService.instance.dumpLater(15000);
         });
 
+        autoDetectGovtApp();
         showCsvInfo(false);
         showGovtInfo();
     }
@@ -114,6 +132,19 @@ public class MainActivity extends Activity {
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                 | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(i, REQ_CSV);
+    }
+
+    // If the Govt app is installed and nothing is chosen yet, choose it automatically.
+    private void autoDetectGovtApp() {
+        if (!store.getGovtPackage().isEmpty()) return;
+        PackageManager pm = getPackageManager();
+        if (pm.getLaunchIntentForPackage(GOVT_PACKAGE) == null) return;
+        try {
+            String label = pm.getApplicationLabel(pm.getApplicationInfo(GOVT_PACKAGE, 0)).toString();
+            store.setGovt(GOVT_PACKAGE, label);
+        } catch (Exception e) {
+            store.setGovt(GOVT_PACKAGE, "Govt app");
+        }
     }
 
     private void pickGovtApp() {
@@ -157,13 +188,13 @@ public class MainActivity extends Activity {
             store.setCsvUri(uri.toString());
             store.setCsvName(fileNameOf(uri));
             FailedLogger.clear(this);
+            Report.clear(this);
             showCsvInfo(true);
-        } else if (requestCode == REQ_SAVE_FAILED) {
-            boolean ok = AppLog.copyToUri(this, FailedLogger.file(this), uri);
-            toast(ok ? "failed.csv saved" : "Could not save failed.csv");
-        } else if (requestCode == REQ_SAVE_LOG) {
-            boolean ok = AppLog.copyToUri(this, AppLog.file(this), uri);
-            toast(ok ? "Log saved" : "Could not save the log");
+        } else if (requestCode == REQ_SAVE_FAILED
+                || requestCode == REQ_SAVE_LOG
+                || requestCode == REQ_SAVE_REPORT) {
+            boolean ok = AppLog.copyToUri(this, sourceFor(requestCode), uri);
+            toast(ok ? "Saved" : "Could not save the file");
         }
     }
 
@@ -180,11 +211,25 @@ public class MainActivity extends Activity {
         return name;
     }
 
-    private void saveFile(int request, String name, String mime) {
-        File source = request == REQ_SAVE_FAILED ? FailedLogger.file(this) : AppLog.file(this);
-        if (!source.exists()) {
-            toast(request == REQ_SAVE_FAILED ? "No failed rows yet" : "The log is empty");
+    private File sourceFor(int request) {
+        if (request == REQ_SAVE_FAILED) return FailedLogger.file(this);
+        if (request == REQ_SAVE_REPORT) return Report.file(this);
+        return AppLog.file(this);
+    }
+
+    private void saveFile(int request) {
+        if (!sourceFor(request).exists()) {
+            toast("Nothing to save yet");
             return;
+        }
+        String name = "autofiller_log.txt";
+        String mime = "text/plain";
+        if (request == REQ_SAVE_FAILED) {
+            name = "failed.csv";
+            mime = "text/csv";
+        } else if (request == REQ_SAVE_REPORT) {
+            name = "report.csv";
+            mime = "text/csv";
         }
         Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
@@ -197,17 +242,30 @@ public class MainActivity extends Activity {
     // Showing information
     // ------------------------------------------------------------------
 
+    private void showModeNote() {
+        if (store.isDryRun()) {
+            tvModeNote.setText("ON: the form is filled but Save is NOT pressed (practice run).");
+            tvModeNote.setTextColor(getColor(R.color.orange));
+        } else {
+            tvModeNote.setText("OFF: Save WILL be pressed for every row (real run).");
+            tvModeNote.setTextColor(getColor(R.color.red));
+        }
+    }
+
     // Reads the CSV and shows the row count or the problems. If 'reset', also clears the progress.
     private void showCsvInfo(boolean reset) {
         String uriText = store.getCsvUri();
         if (uriText.isEmpty()) {
             tvCsv.setText("No file selected");
+            tvCsv.setTextColor(getColor(R.color.text_soft));
             return;
         }
         StringBuilder sb = new StringBuilder(store.getCsvName());
+        boolean error = false;
         try {
             CsvReader.Data d = CsvReader.load(getContentResolver(), Uri.parse(uriText));
             if (!d.columnsOk) {
+                error = true;
                 sb.append("\nERROR:");
                 for (String p : d.problems) sb.append("\n- ").append(p);
             } else {
@@ -215,39 +273,72 @@ public class MainActivity extends Activity {
                 if (!d.problems.isEmpty()) {
                     sb.append("\n").append(d.problems.size())
                             .append(" row(s) have problems and will be skipped:");
-                    for (int i = 0; i < d.problems.size() && i < 5; i++) {
+                    for (int i = 0; i < d.problems.size() && i < 3; i++) {
                         sb.append("\n- ").append(d.problems.get(i));
                     }
-                    if (d.problems.size() > 5) sb.append("\n- ...");
+                    if (d.problems.size() > 3) sb.append("\n- ...");
                 }
                 if (reset) store.resetProgress(d.rows.size());
             }
         } catch (Exception e) {
+            error = true;
             sb.append("\nERROR: could not read the file (").append(e.getMessage()).append(")");
         }
         tvCsv.setText(sb.toString());
+        tvCsv.setTextColor(getColor(error ? R.color.red : R.color.text_dark));
     }
 
     private void showGovtInfo() {
         if (store.getGovtPackage().isEmpty()) {
             tvGovt.setText("No app selected");
+            tvGovt.setTextColor(getColor(R.color.red));
         } else {
             tvGovt.setText(store.getGovtLabel());
+            tvGovt.setTextColor(getColor(R.color.text_dark));
         }
     }
 
     private void updateProgress() {
         String status = store.getStatus();
         FillerService s = FillerService.instance;
-        boolean engineBusy = s != null && s.isRunning();
-        if ((status.equals("Running") || status.equals("Paused")) && !engineBusy) {
-            status = "Stopped (press RESUME to continue)";   // the phone restarted or the app crashed
+        boolean busy = s != null && s.isRunning();
+        boolean paused = busy && status.equals("Paused");
+        if ((status.equals("Running") || status.equals("Paused")) && !busy) {
+            status = "Stopped";   // the phone restarted or the app crashed: RESUME continues
         }
-        tvStatus.setText("Status: " + status);
-        tvCurrent.setText("Current Row: " + store.getCurrent() + " / " + store.getTotal());
-        tvSuccess.setText("Success: " + store.getSuccess());
-        tvFailed.setText("Failed: " + store.getFailed());
+
+        int total = store.getTotal();
+        int done = store.getSuccess() + store.getFailed();
+
+        tvStatus.setText(status);
+        tvStatus.getBackground().mutate().setTint(getColor(chipColor(status)));
+        progressBar.setMax(Math.max(total, 1));
+        progressBar.setProgress(done);
+        tvCurrent.setText("Row " + store.getCurrent() + " of " + total);
+        tvSuccess.setText(String.valueOf(store.getSuccess()));
+        tvFailed.setText(String.valueOf(store.getFailed()));
         tvMessage.setText(store.getMessage());
+
+        boolean canResume = busy ? paused : (store.getNext() > 0 && store.getNext() < total);
+        look(btnStart, !busy);
+        look(btnPause, busy && !paused);
+        look(btnResume, canResume);
+        look(btnStop, busy);
+    }
+
+    private int chipColor(String status) {
+        if (status.equals("Running")) return R.color.green;
+        if (status.equals("Paused")) return R.color.orange;
+        if (status.equals("Finished")) return R.color.blue;
+        if (status.equals("Ready")) return R.color.text_soft;
+        if (status.equals("Starting...")) return R.color.blue;
+        return R.color.red;   // Stopped, errors
+    }
+
+    // Faded buttons are the ones that do nothing right now.
+    private void look(Button b, boolean enabled) {
+        b.setEnabled(enabled);
+        b.setAlpha(enabled ? 1f : 0.35f);
     }
 
     // ------------------------------------------------------------------
@@ -275,6 +366,20 @@ public class MainActivity extends Activity {
             return;
         }
 
+        if (store.isDryRun()) {
+            launchRun(resume);
+        } else {
+            new AlertDialog.Builder(this)
+                    .setTitle("Real run")
+                    .setMessage("Test mode is OFF. AutoFiller will press Save in the Govt app for each row of "
+                            + store.getCsvName() + ".\n\nMake sure the CSV has real, correct data.")
+                    .setPositiveButton("Yes, start", (d, w) -> launchRun(resume))
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        }
+    }
+
+    private void launchRun(final boolean resume) {
         // We are on screen right now, so Android lets us open the Govt app from here.
         Intent launch = getPackageManager().getLaunchIntentForPackage(store.getGovtPackage());
         if (launch != null) startActivity(launch);

@@ -37,8 +37,10 @@ public class SetupActivity extends Activity {
         super.onResume();
         if (FillerService.instance != null) {
             tvState.setText("Service is ON - you are ready");
+            tvState.getBackground().mutate().setTint(getColor(R.color.green));
         } else {
             tvState.setText("Service is OFF - follow Step 1");
+            tvState.getBackground().mutate().setTint(getColor(R.color.red));
         }
     }
 }

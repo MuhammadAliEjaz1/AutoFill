@@ -54,6 +54,7 @@ public class FillerService extends AccessibilityService {
     private volatile boolean running = false;
     private volatile boolean paused = false;
     private volatile boolean stopRequested = false;
+    private volatile boolean savePressed = false;   // true once Save was pressed for the current row
     private PowerManager.WakeLock wakeLock;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -157,6 +158,7 @@ public class FillerService extends AccessibilityService {
             } else {
                 store.resetProgress(data.rows.size());
                 FailedLogger.clear(this);
+                Report.clear(this);
             }
             store.setTotal(data.rows.size());
             if (start >= data.rows.size()) {
@@ -178,22 +180,21 @@ public class FillerService extends AccessibilityService {
                 if (rowProblem != null) {
                     result = rowProblem;
                 } else {
-                    try {
-                        result = fillOneRow(data, i, pkg);
-                    } catch (Exception e) {
-                        result = "Crash: " + e;
-                    }
+                    result = tryRow(data, i, pkg);
                 }
 
                 if (stopRequested) break;   // a half-finished row is not counted
 
                 if (result == null) {
                     store.setSuccess(store.getSuccess() + 1);
-                    store.setMessage("Row " + (i + 1) + " done");
+                    store.setMessage("Row " + (i + 1) + (store.isDryRun() ? " filled (test mode)" : " saved"));
+                    Report.add(this, i + 1, data.header, data.rows.get(i),
+                            store.isDryRun() ? "TEST - not saved" : "SAVED", "");
                 } else {
                     store.setFailed(store.getFailed() + 1);
                     store.setMessage("Row " + (i + 1) + " failed: " + result);
                     FailedLogger.add(this, data.header, data.rows.get(i), result);
+                    Report.add(this, i + 1, data.header, data.rows.get(i), "FAILED", result);
                     AppLog.add(this, "Row " + (i + 1) + " FAILED: " + result);
                 }
                 store.setNext(i + 1);
@@ -208,6 +209,24 @@ public class FillerService extends AccessibilityService {
             keepAwake(false);
             running = false;
         }
+    }
+
+    // Tries a row. If it fails BEFORE Save was pressed, it tries once more.
+    // After Save was pressed it never tries again, so nothing is saved twice.
+    private String tryRow(CsvReader.Data data, int i, String pkg) {
+        String result = null;
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            savePressed = false;
+            try {
+                result = fillOneRow(data, i, pkg);
+            } catch (Exception e) {
+                result = "Crash: " + e;
+            }
+            if (result == null || stopRequested || savePressed) return result;
+            AppLog.add(this, "Row " + (i + 1) + " attempt " + attempt + " failed: " + result
+                    + (attempt == 1 ? " - trying once more" : ""));
+        }
+        return result;
     }
 
     // Fills one row. Returns null if it worked, otherwise the reason it failed.
@@ -379,7 +398,12 @@ public class FillerService extends AccessibilityService {
                 if (again != null && sameValue(value, again.getText())) return null;
             }
         }
-        return "Could not fill: " + label;
+        AccessibilityNodeInfo r = getRootInActiveWindow();
+        if (r != null) {
+            AppLog.add(this, "Could not fill " + label + ". Typed: " + value
+                    + ". Screen text: " + shorten(screenText(allNodes(r)), 400));
+        }
+        return "Could not fill: " + label + " (field not found, or the app refused the value)";
     }
 
     // Finds the box that belongs to a label such as "Address".
@@ -512,8 +536,14 @@ public class FillerService extends AccessibilityService {
         if (save == null) return "Save button not found";
 
         showOnScreen(save);
+        savePressed = true;
         click(save);
         sleep(1500);
+
+        AccessibilityNodeInfo afterSave = getRootInActiveWindow();
+        if (afterSave != null) {
+            AppLog.add(this, "After Save the screen shows: " + shorten(screenText(allNodes(afterSave)), 300));
+        }
 
         long end = System.currentTimeMillis() + 12000;
         while (System.currentTimeMillis() < end) {
@@ -613,6 +643,10 @@ public class FillerService extends AccessibilityService {
             for (String t : textsOf(n)) sb.append(t).append(" | ");
         }
         return sb.toString();
+    }
+
+    private String shorten(String s, int max) {
+        return s.length() <= max ? s : s.substring(0, max) + "...";
     }
 
     private String firstWordFound(String lowerText, String[] words) {

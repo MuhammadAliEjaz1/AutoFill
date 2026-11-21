@@ -1,0 +1,10 @@
+<resources>
+    <color name="primary">#0B3D5C</color>
+    <color name="green">#2E9E48</color>
+    <color name="orange">#E8851A</color>
+    <color name="blue">#1E6FD9</color>
+    <color name="red">#D64545</color>
+    <color name="grey_bg">#EEF1F4</color>
+    <color name="text_dark">#1F2933</color>
+    <color name="text_soft">#66727F</color>
+</resources>

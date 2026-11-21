@@ -30,7 +30,7 @@ public class FailedLogger {
     }
 
     // Puts every cell in quotes so commas inside the address stay safe.
-    private static String join(List<String> cells) {
+    static String join(List<String> cells) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < cells.size(); i++) {
             if (i > 0) sb.append(',');
@@ -39,7 +39,7 @@ public class FailedLogger {
         return sb.toString();
     }
 
-    private static String quote(String s) {
+    static String quote(String s) {
         return "\"" + s.replace("\"", "\"\"") + "\"";
     }
 }
