@@ -559,14 +559,20 @@ public class FillerService extends AccessibilityService {
             if (errorWord != null) {
                 AppLog.add(this, "After Save the app showed an error. Screen was:");
                 logScreen();
+                String message = popupMessage(nodes);
                 dismissPopup(nodes);
                 sleep(800);
+                if (message != null) return "App says: " + message;
                 return "The app showed a message containing '" + errorWord + "' (see log)";
             }
 
             boolean successWord = firstWordFound(text, SUCCESS_WORDS) != null;
             boolean formGone = !formVisible(nodes);
-            if (successWord || formGone || nameBoxIsEmpty(nodes)) {
+            boolean formCleared = !formGone && nameBoxIsEmpty(nodes);
+            if (successWord || formGone || formCleared) {
+                AppLog.add(this, "Saved. Signal: "
+                        + (successWord ? "success word" : formGone ? "form closed" : "form cleared")
+                        + ". Screen: " + shorten(text, 200));
                 dismissPopup(nodes);
                 sleep(800);
                 return null;
@@ -576,6 +582,16 @@ public class FillerService extends AccessibilityService {
         AppLog.add(this, "No response after Save. Screen was:");
         logScreen();
         return "No response after Save (timeout)";
+    }
+
+    // The text of the app's popup message, squeezed onto one line (used as the failure reason).
+    private String popupMessage(List<AccessibilityNodeInfo> nodes) {
+        for (AccessibilityNodeInfo n : nodes) {
+            if ("android:id/message".equals(n.getViewIdResourceName()) && n.getText() != null) {
+                return n.getText().toString().replaceAll("\\s*[\\r\\n]+\\s*", "; ").trim();
+            }
+        }
+        return null;
     }
 
     private boolean nameBoxIsEmpty(List<AccessibilityNodeInfo> nodes) {
