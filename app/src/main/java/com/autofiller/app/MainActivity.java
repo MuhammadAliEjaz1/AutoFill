@@ -80,8 +80,8 @@ public class MainActivity extends Activity {
                 toast("Turn ON AutoFiller in Accessibility settings first");
                 return;
             }
-            toast("Open the Govt app now. The screen is read in 5 seconds.");
-            FillerService.instance.dumpLater(5000);
+                        toast("Open the Govt app now. The screen is read in 15 seconds.");
+            FillerService.instance.dumpLater(15000);
         });
 
         showCsvInfo(false);
